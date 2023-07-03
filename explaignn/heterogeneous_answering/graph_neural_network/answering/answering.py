@@ -2,9 +2,12 @@ import numpy as np
 import torch
 import warnings
 from sklearn.metrics import balanced_accuracy_score
+import networkx as nx
+
 
 import explaignn.evaluation as evaluation
 from explaignn.library.utils import get_logger
+from explaignn.heterogeneous_answering.graph_neural_network.graph import Graph
 
 
 class Answering(torch.nn.Module):
@@ -162,9 +165,31 @@ class Answering(torch.nn.Module):
                 if not id_to_entity[candidate_idx] == 0
             ]
 
+            # evidence_to_score = {evid["evidence_text"]: evid["score"] for evid in scored_evidences}
+            # entity_to_score = {ent["id"]: ent["score"] for ent in scored_entities}
+
+            #entity_scores = {entity["g_id"]: entity["score"] for entity in scored_entities}
+            # # Iterate over all scored_evidences
+            # for se in scored_evidences:
+            #     # Iterate over all wikidata_entities
+            #     for ent in se["wikidata_entities"]:
+            #         # Use the dictionary to look up the score and add it to the current wikidata_entity
+            #         assert(ent["g_id"] in entity_scores)
+            #         ent["score"] = entity_scores[ent["g_id"]]
+
+
             # get top-k evidences
             ent_to_ev = batch["ent_to_ev"][idx]
-            top_evidences = self._compute_reduced_graph(scored_evidences, scored_entities)
+            max_evidences = self.config["gnn_max_output_evidences"]
+            
+            if "comment" in self.config and "connected" in self.config["comment"]:
+                graph = Graph().from_scoring_output(scored_evidences, scored_entities, ent_to_ev)
+                if "top" in self.config:
+                    top_evidences = graph._get_connected_subgraph_top(scored_evidences, self.config["gnn_max_output_evidences"], self.config["comment"])
+                else:
+                    top_evidences = graph._get_connected_subgraph(scored_evidences, scored_entities, self.config["gnn_max_output_evidences"], self.config["comment"])
+            else:
+                top_evidences = self._compute_reduced_graph(scored_evidences, scored_entities)
 
             # add predictions
             result = dict()
@@ -172,6 +197,9 @@ class Answering(torch.nn.Module):
             result["ev_predictions"] = ev_predictions_for_q
             result["ans_predictions"] = ans_predictions_for_q
 
+            result["evidence_to_score"] = {evid["evidence_text"]: evid["score"] for evid in scored_evidences}
+            result["entity_to_score"] = {ent["id"]: ent["score"] for ent in scored_entities}
+            
             # append
             results.append(result)
         return results

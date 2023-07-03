@@ -1,3 +1,4 @@
+import copy
 import json
 import numpy as np
 import os
@@ -10,7 +11,8 @@ from tqdm import tqdm
 import explaignn.heterogeneous_answering.graph_neural_network.dataset_gnn as dataset
 from explaignn.heterogeneous_answering.graph_neural_network.gnn_factory import GNNFactory
 from explaignn.heterogeneous_answering.heterogeneous_answering import HeterogeneousAnswering
-from explaignn.library.utils import get_logger
+from explaignn.library.utils import get_logger, mark_separator, get_para
+from explaignn.heterogeneous_answering.graph_neural_network.graph import Graph
 
 START_DATE = time.strftime("%y-%m-%d_%H-%M", time.localtime())
 
@@ -182,12 +184,20 @@ class GNNModule(HeterogeneousAnswering):
         self.logger.info("Running inference_on_turns function!")
         self.load()
 
+        for turn in turns:
+            if "top_evidences" not in turn:
+                print("what??? " + str(turn["question_id"]))
+            for evi in turn["top_evidences"]:
+                evi["last_score"] = evi["score"]
+
         with torch.no_grad(), tqdm(total=len(turns)) as p_bar:
             batch_size = self.config["gnn_eval_batch_size"]
 
             # run inference
             instances = dataset.DatasetGNN.prepare_turns(self.config, turns, train=False)
             start_index = 0
+
+            turns_before_iteration = copy.deepcopy(turns)
 
             while start_index < len(instances):
                 end_index = min(start_index + batch_size, len(instances))
@@ -198,19 +208,60 @@ class GNNModule(HeterogeneousAnswering):
                 output = self.gnn(batch, train=False)
 
                 for i, _ in enumerate(batch_instances):
+
                     instance_index = start_index + i
                     turn = turns[instance_index]
+
+                    turn_before_iteration = turns_before_iteration[instance_index]
+
+                    #store scores
+                    for evi in turn_before_iteration["top_evidences"]:
+                        evidence_to_score = output["evidence_predictions"][i]["evidence_to_score"]
+                        entity_to_score = output["evidence_predictions"][i]["entity_to_score"]
+                        assert(evi["evidence_text"] in evidence_to_score)
+                        evi["score"] = evidence_to_score[evi["evidence_text"]]
+                        for ent in evi["wikidata_entities"]:
+                            if ent["id"] in entity_to_score:
+                                ent["score"] = entity_to_score[ent["id"]]
+                            else:
+                                ent["score"] = -1
+                                me = self.config["gnn_max_entities"]
+                    
+
 
                     # store
                     turn["ranked_answers"] = output["answer_predictions"][i]["ranked_answers"]
 
                     # add top-evidences within iterative GNN
-                    if "gnn_max_output_evidences" in self.config:
-                        top_evidences = output["evidence_predictions"][i]["top_evidences"]
-                        turn["top_evidences"] = list(top_evidences)
-                    else:
-                        del turn["top_evidences"]
+                    if "gnn_max_output_evidences" in self.config and len(turn["top_evidences"]) > self.config["gnn_max_output_evidences"]:
+                        if "comment" in self.config and "sep" in self.config["comment"]:
+                            sorted_top_evidences = sorted(turn_before_iteration["top_evidences"], key=lambda evi: evi["score"], reverse=True)
+                            scores = [evi["score"] for evi in sorted_top_evidences]
+                            alpha = None
+                            if "alpha" in self.config["comment"]:
+                                alpha = get_para(self.config["comment"], "alpha")
+                            if alpha == None:
+                                alpha = 0.5
+                            k = min(mark_separator(scores, alpha) + 1, self.config["gnn_max_output_evidences"])
+                            if "min" in self.config["comment"]:
+                                number = get_para(self.config["comment"], "min")
+                                k = max(k, number)
+                            turn["top_evidences"] = sorted_top_evidences[:k]
+                            turn_before_iteration["separator"] = k - 1
+                        else:
+                            top_evidences = output["evidence_predictions"][i]["top_evidences"]
 
+                            #dropped_evid = []
+                            #dropped_evid = [evid for evid in turn["top_evidences"] if evid not in top_evidences]
+                            #dropped_evid = [d['evidence_text'] + ", score: " + str(d['score']) for d in dropped_evid]
+                            #turn['ans_evs_dropped_list'].append(dropped_evid)
+                            
+                            turn["top_evidences"] = list(top_evidences)
+                    #else:
+                        #del turn["top_evidences"]
+
+                    if "top_evidences" not in turn:
+                        print("not in turn " + str(turn["question_id"]))
                     # obtain metrics
                     if "answers" in turn:  # e.g. for demo answers are not known
                         turn["p_at_1"] = output["qa_metrics"][i]["p_at_1"]
@@ -229,9 +280,58 @@ class GNNModule(HeterogeneousAnswering):
                         del turn["silver_answering_evidences"]
                     if "instance" in turn:
                         del turn["instance"]
+
                 start_index += batch_size
                 p_bar.update(batch_size)
-        return turns
+            
+            #store graph structure to show in the websiteß
+            self.update_graph_info_turns(turns, turns_before_iteration)
+
+        return turns_before_iteration
+
+
+    def update_graph_info_turns(self, turns, turns_before_iteration):
+        assert(len(turns) == len(turns_before_iteration))
+        for i in range(len(turns)):
+            self.update_graph_info(turns[i], turns_before_iteration[i])
+
+    def update_graph_info(self, turn, turn_before_iteration):
+        """Prepare data for showing visible graphs in website"""
+        if 'graphs' not in turn_before_iteration:
+            turn_before_iteration['graphs'] = []
+        if 'answer_presence_list' not in turn_before_iteration:
+            turn_before_iteration['answer_presence_list'] = []
+        if 'evidence_list' not in turn_before_iteration:
+            turn_before_iteration['evidence_list'] = []
+        
+        if self.config["gnn_max_evidences"] <= 20:
+            instance = dataset.DatasetGNN.prepare_turn(self.config, turn_before_iteration, train=False)
+            graph = Graph().from_instance(instance)
+            turn_before_iteration['graphs'].append(graph.to_string())
+        else:
+            turn_before_iteration['graphs'].append("")
+
+        turn_before_iteration['answer_presence_list'].append(turn_before_iteration['answer_presence'])
+        
+        keys = ["evidence_text", "score", "is_answering_evidence"]
+        sorted_evis = sorted(
+            [{key: evi[key] for key in keys} for evi in turn_before_iteration["top_evidences"]],
+            key=lambda x: float(x["score"]),
+            reverse=True
+        )
+        if "separator" in turn_before_iteration:
+            sorted_evis.append(turn_before_iteration["separator"])
+        else:
+            sorted_evis.append(-1)
+        turn_before_iteration['evidence_list'].append(sorted_evis)
+
+        keys = ["graphs", "answer_presence_list", "evidence_list"]
+        for key in keys:
+            turn[key] = turn_before_iteration[key]
+
+        keys = ["p_at_1", "mrr", "h_at_5", "ranked_answers"]
+        for key in keys:
+            turn_before_iteration[key] = turn[key]
 
     def inference_on_turn(self, turn, sources=("kb", "text", "table", "info"), train=False):
         """Run inference on a single turn."""

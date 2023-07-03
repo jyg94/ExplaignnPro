@@ -4,7 +4,7 @@ import os
 import sys
 import yaml
 from pathlib import Path
-
+import re
 
 def get_config(path):
     """Load the config dict from the given .yml file."""
@@ -113,3 +113,65 @@ def extract_mapping_incomplete_complete(data_paths):
                 completed = turn["completed"]
                 mapping_incomplete_to_complete[question] = completed
     return mapping_incomplete_to_complete
+
+def get_gnn_string(config):
+    # Create an empty list to store the elements of the string
+    gnn_string_elements = []
+
+    # Iterate through each block in 'gnn_inference'
+    for block in config['gnn_inference']:
+        # Start with the 'gnn_max_evidences' value
+        element = str(block['gnn_max_evidences'])
+        
+        # If 'connected' is present and its value is truthy, append '-connected' 
+        if block.get('comment'):
+            element += '!' + block['comment'] + '!'
+
+            
+        # Add the processed element to the list
+        gnn_string_elements.append(element)
+
+    # Append the 'gnn_max_output_evidences' of the last block
+    #gnn_string_elements.append(str(config['gnn_inference'][-1]['gnn_max_output_evidences']))
+
+    # Join all the elements into a single string with '-' as the separator
+    gnn_string = '-'.join(gnn_string_elements)
+    return gnn_string
+
+def get_out_path(config, i):
+    gnn_string = get_gnn_string(config)
+    gme = config["gnn_inference"][int(i)]["gnn_max_evidences"]
+
+    return f"out/{gnn_string}/{gme}.json"
+
+def mark_separator(numbers, alpha = 0.5):
+    min_penalty = float('inf')
+    separator = None
+    
+    # Loop through the list, considering each number as a potential separator
+    for i in range(len(numbers)):
+        # Split the list into two sets based on the current separator
+        s1 = numbers[:i]
+        s2 = numbers[i:]
+        
+        # Calculate the penalty for each set
+        penalty_s1 = (1 - alpha) * len(s1) * (max(s1) - min(s1)) if s1 else 0
+        penalty_s2 = alpha * len(s2) * (max(s2) - min(s2)) if s2 else 0
+        
+        # Calculate the total penalty for this separator
+        total_penalty = penalty_s1 + penalty_s2
+        
+        # If this penalty is lower than the current minimum, update the minimum and the separator
+        if total_penalty < min_penalty:
+            min_penalty = total_penalty
+            separator = max(i - 1, 0)
+    
+    return separator
+
+def get_para(s, para):
+    pattern = rf'{para}(\d+\.?\d*)'
+    match = re.search(pattern, s)
+    if match:
+        return float(match.group(1))
+    else:
+        return None

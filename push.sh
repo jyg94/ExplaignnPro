@@ -1,3 +1,3 @@
-cp -r out/convmix ~/test/
-cd ~/test
-./push.sh
+git add .
+git commit -m "none"
+git push

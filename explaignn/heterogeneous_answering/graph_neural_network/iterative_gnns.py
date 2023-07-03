@@ -9,7 +9,7 @@ import random
 
 from explaignn.heterogeneous_answering.graph_neural_network.graph_neural_network import GNNModule
 from explaignn.heterogeneous_answering.heterogeneous_answering import HeterogeneousAnswering
-from explaignn.library.utils import get_config, get_logger, store_json_with_mkdir
+from explaignn.library.utils import get_config, get_logger, store_json_with_mkdir, get_out_path
 
 SEED = 7
 START_DATE = time.strftime("%y-%m-%d_%H-%M", time.localtime())
@@ -112,7 +112,7 @@ class IterativeGNNs(HeterogeneousAnswering):
         turns_before_iteration = list()
         for i in range(len(self.config["gnn_inference"])):
             turns_before_iteration.append(copy.deepcopy(turns))
-
+            
             # compute ans pres
             if "answers" in turns[0]:
                 answer_presence_list = [turn["answer_presence"] for turn in turns]
@@ -122,10 +122,11 @@ class IterativeGNNs(HeterogeneousAnswering):
                 res_str = f"Inference - Ans. pres. ({num_questions}): {answer_presence}"
                 self.logger.info(res_str)
 
-            self.gnns[i].inference_on_turns(turns)
-            self.logger.debug(f'Here is the {i}-th turn')
-            self.logger.debug(turns)
+            turns_before = self.gnns[i].inference_on_turns(turns)
 
+            if "cache" in self.config["gnn_inference"][i] and self.config["gnn_inference"][i]["cache"] == True:
+                store_json_with_mkdir(turns_before, get_out_path(self.config, i))
+                
         # remember top evidences
         for turn_idx, turn in enumerate(turns):
             # identify supporting evidences

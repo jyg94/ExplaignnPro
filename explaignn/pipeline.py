@@ -166,7 +166,7 @@ class Pipeline:
             # compute results
             p_at_1_list = [turn["p_at_1"] for conv in input_data for turn in conv["questions"]]
             p_at_1 = sum(p_at_1_list) / len(p_at_1_list)
-            p_at_1 = round(p_at_1, 3)
+            #p_at_1 = round(p_at_1, 3)
             num_questions = len(p_at_1_list)
             # log result
             res_str = f"Gold answers - {sources_str} - P@1 ({num_questions}): {p_at_1}"
