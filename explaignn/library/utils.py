@@ -5,6 +5,10 @@ import sys
 import yaml
 from pathlib import Path
 import re
+import scipy.stats as stats
+import numpy as np
+
+
 
 def get_config(path):
     """Load the config dict from the given .yml file."""
@@ -175,3 +179,17 @@ def get_para(s, para):
         return float(match.group(1))
     else:
         return None
+
+def calculate_entropies(data, i, bins=100):
+    # Extracts the scores for each element in the evidence_list
+    evidence_scores = [item['score'] for item in data['evidence_list'][i] if isinstance(item, dict) and 'score' in item]
+
+    # Bin the data and calculate entropy for each element
+    entropies = []
+    for scores in evidence_scores:
+        counts, _ = np.histogram(scores, bins=bins, range=(0, 1))  # bin the data into `bins` bins
+        probabilities = counts / sum(counts)  # normalize the counts to get probabilities
+        entropy = stats.entropy(probabilities)  # calculate entropy
+        entropies.append(entropy)
+
+    return entropies

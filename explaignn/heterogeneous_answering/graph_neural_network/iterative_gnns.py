@@ -9,7 +9,7 @@ import random
 
 from explaignn.heterogeneous_answering.graph_neural_network.graph_neural_network import GNNModule
 from explaignn.heterogeneous_answering.heterogeneous_answering import HeterogeneousAnswering
-from explaignn.library.utils import get_config, get_logger, store_json_with_mkdir, get_out_path
+from explaignn.library.utils import get_config, get_logger, store_json_with_mkdir, get_out_path, calculate_entropies
 
 SEED = 7
 START_DATE = time.strftime("%y-%m-%d_%H-%M", time.localtime())
@@ -125,7 +125,16 @@ class IterativeGNNs(HeterogeneousAnswering):
             turns_before = self.gnns[i].inference_on_turns(turns)
 
             if "cache" in self.config["gnn_inference"][i] and self.config["gnn_inference"][i]["cache"] == True:
+                if "top_evidences" in turns_before:
+                    del turns_before["top_evidences"]
                 store_json_with_mkdir(turns_before, get_out_path(self.config, i))
+            
+            entropy = calculate_entropies(turns_before, i)
+            if entropy > self.configs[i]["entropy_threshold"]:
+                self.gnns_ans[i].inference_on_turns(turns)
+                break
+            if i == len(self.config["gnn_inference"]) - 1:
+                self.gnns_ans[i+1].inference_on_turns(turns)
                 
         # remember top evidences
         for turn_idx, turn in enumerate(turns):
@@ -214,7 +223,17 @@ class IterativeGNNs(HeterogeneousAnswering):
                 GNNModule(self.configs[i], iteration=i + 1)
                 for i in range(len(self.config["gnn_inference"]))
             ]
+            self.configs_ans = [
+                self._prepare_config_for_iteration(config_at_i)
+                for config_at_i in self.config["gnn_answer"]
+            ]
+            self.gnns_ans = [
+                GNNModule(self.configs[i], iteration=i + 1)
+                for i in range(len(self.config["gnn_answer"]))
+            ]
             for gnn in self.gnns:
+                gnn.load()
+            for gnn in self.gnns_ans:
                 gnn.load()
 
             # remember that model is loaded
