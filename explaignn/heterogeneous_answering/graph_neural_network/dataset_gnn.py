@@ -109,8 +109,8 @@ class DatasetGNN(Dataset):
         gold_answers = turn["answers"] if "answers" in turn else list()
 
         # load params
-        max_entities = config["gnn_max_entities"]
         max_evidences = config["gnn_max_evidences"]
+        max_entities = config["gnn_max_entities"]
         max_pos_evidences = config["gnn_train_max_pos_evidences"] if train else 0
 
         if len(evidences) > max_evidences:

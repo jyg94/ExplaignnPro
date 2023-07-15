@@ -181,27 +181,40 @@ class GNNModule(HeterogeneousAnswering):
 
     def inference_on_turns(self, turns, sources=("kb", "text", "table", "info"), train=False):
         """Run inference on a multiple turns."""
-        self.logger.info("Running inference_on_turns function!")
         self.load()
 
-        for turn in turns:
-            if "top_evidences" not in turn:
-                print("what??? " + str(turn["question_id"]))
-            for evi in turn["top_evidences"]:
-                evi["last_score"] = evi["score"]
+        # for turn in turns:
+        #     for evi in turn["top_evidences"]:
+        #         evi["last_score"] = evi["score"]
+        # finished_turns = [turn for turn in turns if turn.get('finished', False)]
+        # other_turns = [turn for turn in turns if not turn.get('finished', False)]
 
-        with torch.no_grad(), tqdm(total=len(turns)) as p_bar:
+        # # Count the number of "turn" without "finished"
+        # count = len(other_turns)
+
+        # # Sort other turns according to len(turn["top_evidences"]) from large to small
+        # other_turns.sort(key=lambda turn: len(turn["top_evidences"]), reverse=True)
+
+        # # Combine the lists, keeping "finished" turns at the end
+        # turns = other_turns + finished_turns
+        count = len(turns)
+        with torch.no_grad() and tqdm(total=len(turns)) as p_bar:
             batch_size = self.config["gnn_eval_batch_size"]
 
             # run inference
-            instances = dataset.DatasetGNN.prepare_turns(self.config, turns, train=False)
+            #instances = dataset.DatasetGNN.prepare_turns(self.config, turns, train=False)
             start_index = 0
 
             turns_before_iteration = copy.deepcopy(turns)
-
-            while start_index < len(instances):
-                end_index = min(start_index + batch_size, len(instances))
+            instances = dataset.DatasetGNN.prepare_turns(self.config, turns, train=False)
+            
+            while start_index < count:
+                end_index = min(start_index + batch_size, count)
                 batch_instances = instances[start_index:end_index]
+                #p_bar.update(batch_size)
+                # if len(batch_instances) == 1 and "finished" in turns[start_index]:
+                #     start_index += batch_size
+                #     continue
                 batch = dataset.collate_fn(batch_instances)
                 # move data to gpu (if possible)
                 GNNModule._move_to_cuda(batch)
@@ -231,9 +244,9 @@ class GNNModule(HeterogeneousAnswering):
 
                     # store
                     turn["ranked_answers"] = output["answer_predictions"][i]["ranked_answers"]
-
+                    top_evidences = output["evidence_predictions"][i]["top_evidences"]
                     # add top-evidences within iterative GNN
-                    if "gnn_max_output_evidences" in self.config and len(turn["top_evidences"]) > self.config["gnn_max_output_evidences"]:
+                    if "gnn_max_output_evidences" in self.config and len(turn["top_evidences"]) > len(top_evidences):
                         if "comment" in self.config and "sep" in self.config["comment"]:
                             sorted_top_evidences = sorted(turn_before_iteration["top_evidences"], key=lambda evi: evi["score"], reverse=True)
                             scores = [evi["score"] for evi in sorted_top_evidences]
@@ -249,7 +262,7 @@ class GNNModule(HeterogeneousAnswering):
                             turn["top_evidences"] = sorted_top_evidences[:k]
                             turn_before_iteration["separator"] = k - 1
                         else:
-                            top_evidences = output["evidence_predictions"][i]["top_evidences"]
+                            
 
                             #dropped_evid = []
                             #dropped_evid = [evid for evid in turn["top_evidences"] if evid not in top_evidences]
@@ -280,9 +293,8 @@ class GNNModule(HeterogeneousAnswering):
                         del turn["silver_answering_evidences"]
                     if "instance" in turn:
                         del turn["instance"]
-
-                start_index += batch_size
                 p_bar.update(batch_size)
+                start_index += batch_size
             
             #store graph structure to show in the websiteß
             self.update_graph_info_turns(turns, turns_before_iteration)
@@ -321,8 +333,6 @@ class GNNModule(HeterogeneousAnswering):
         )
         if "separator" in turn_before_iteration:
             sorted_evis.append(turn_before_iteration["separator"])
-        else:
-            sorted_evis.append(-1)
         turn_before_iteration['evidence_list'].append(sorted_evis)
 
         keys = ["graphs", "answer_presence_list", "evidence_list"]
@@ -335,6 +345,8 @@ class GNNModule(HeterogeneousAnswering):
 
     def inference_on_turn(self, turn, sources=("kb", "text", "table", "info"), train=False):
         """Run inference on a single turn."""
+        if "finished" in turn and turn["finished"] == True:
+            return turn
         return self.inference_on_turns([turn], sources, train)[0]
 
     @staticmethod

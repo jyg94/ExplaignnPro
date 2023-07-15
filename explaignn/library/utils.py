@@ -144,7 +144,10 @@ def get_gnn_string(config):
 
 def get_out_path(config, i):
     gnn_string = get_gnn_string(config)
-    gme = config["gnn_inference"][int(i)]["gnn_max_evidences"]
+    if int(i) < len(config["gnn_inference"]):
+        gme = config["gnn_inference"][int(i)]["gnn_max_evidences"]
+    else:
+        gme = "ans"
 
     return f"out/{gnn_string}/{gme}.json"
 
@@ -180,16 +183,27 @@ def get_para(s, para):
     else:
         return None
 
-def calculate_entropies(data, i, bins=100):
+def calculate_entropies(data, bins=1000):
+    if len(data) == 0:
+        return 1
+    bins = len(data)
     # Extracts the scores for each element in the evidence_list
-    evidence_scores = [item['score'] for item in data['evidence_list'][i] if isinstance(item, dict) and 'score' in item]
+    scores = [item**0.5 for item in data]
 
     # Bin the data and calculate entropy for each element
-    entropies = []
-    for scores in evidence_scores:
-        counts, _ = np.histogram(scores, bins=bins, range=(0, 1))  # bin the data into `bins` bins
-        probabilities = counts / sum(counts)  # normalize the counts to get probabilities
-        entropy = stats.entropy(probabilities)  # calculate entropy
-        entropies.append(entropy)
+    counts, _ = np.histogram(scores, bins=bins, range=(0, 1))  # bin the data into `bins` bins
+    probabilities = counts / sum(counts)  # normalize the counts to get probabilities
+    entropy = stats.entropy(probabilities) / np.log(bins) # calculate entropy
 
-    return entropies
+    return entropy
+
+def decide_max_evi(entro, p=75, e=1.8, ma = 250, mi = 20):
+    if (10*entro)**e == 0:
+        print(entro)
+        return ma
+    target = int(p / (10*entro)**e)
+    if target > ma:
+        target = ma
+    if target < mi:
+        target = mi
+    return target

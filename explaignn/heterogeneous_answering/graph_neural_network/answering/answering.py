@@ -6,7 +6,7 @@ import networkx as nx
 
 
 import explaignn.evaluation as evaluation
-from explaignn.library.utils import get_logger
+from explaignn.library.utils import get_logger, calculate_entropies, decide_max_evi
 from explaignn.heterogeneous_answering.graph_neural_network.graph import Graph
 
 
@@ -180,16 +180,16 @@ class Answering(torch.nn.Module):
 
             # get top-k evidences
             ent_to_ev = batch["ent_to_ev"][idx]
-            max_evidences = self.config["gnn_max_output_evidences"]
+            max_evidences = self._compute_reduced_graph(scored_evidences, scored_entities)
             
             if "comment" in self.config and "connected" in self.config["comment"]:
                 graph = Graph().from_scoring_output(scored_evidences, scored_entities, ent_to_ev)
                 if "top" in self.config:
-                    top_evidences = graph._get_connected_subgraph_top(scored_evidences, self.config["gnn_max_output_evidences"], self.config["comment"])
+                    top_evidences = graph._get_connected_subgraph_top(scored_evidences, max_evidences, self.config["comment"])
                 else:
-                    top_evidences = graph._get_connected_subgraph(scored_evidences, scored_entities, self.config["gnn_max_output_evidences"], self.config["comment"])
+                    top_evidences = graph._get_connected_subgraph(scored_evidences, scored_entities, max_evidences, self.config["comment"])
             else:
-                top_evidences = self._compute_reduced_graph(scored_evidences, scored_entities)
+                top_evidences = scored_evidences[:max_evidences]
 
             # add predictions
             result = dict()
@@ -211,9 +211,9 @@ class Answering(torch.nn.Module):
         A graph is defined by a set of evidences, which
         can be used to instantiate a heterogeneous graph.
         """
-        max_evidences = self.config["gnn_max_output_evidences"]
-        top_evidences = scored_evidences[:max_evidences]
-        return top_evidences
+        entro = calculate_entropies([evid["score"] for evid in scored_evidences])
+        max_evidences = decide_max_evi(entro)
+        return max_evidences
 
     def compute_balanced_accuracy(self, outputs, batch, labels_key="entity_labels"):
         """

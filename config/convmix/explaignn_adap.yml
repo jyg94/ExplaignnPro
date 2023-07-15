@@ -184,20 +184,15 @@ gnn_train:
 
 # inference/eval
 gnn_eval_batch_size: 10
+gnn_max_iteration: 2
 gnn_inference:
   - gnn_model_path: "_data/convmix/explaignn/gnn/gnn-pruning.bin"
     gnn_encoder: alternating_encoder_cross_SR
     gnn_max_evidences: 500
     gnn_max_entities: 1000
-    gnn_max_output_evidences: 100
-    cache: True
+    gnn_max_output_evidences: 500
+    comment: "adap_iter_faster"
 
-  - gnn_model_path: "_data/convmix/explaignn/gnn/gnn-pruning.bin"
-    gnn_encoder: alternating_encoder_cross_SR
-    gnn_max_evidences: 100
-    gnn_max_entities: 400
-    gnn_max_output_evidences: 20
-    cache: True
 
 gnn_answer:
 
@@ -206,24 +201,6 @@ gnn_answer:
     gnn_model_path: "_data/convmix/explaignn/gnn/gnn-answering.bin"
     gnn_max_evidences: 500
     gnn_max_entities: 1000
-    gnn_max_output_evidences: 5
-    entropy_threshold: 0.5053260696172912
-    cache: True
-
-  - gnn_encoder: full_encoder_cross_SR
-    gnn_add_entity_type: True
-    gnn_model_path: "_data/convmix/explaignn/gnn/gnn-answering.bin"
-    gnn_max_evidences: 100
-    gnn_max_entities: 400
-    gnn_max_output_evidences: 5
-    cache: True
-
-  - gnn_encoder: full_encoder_cross_SR
-    gnn_add_entity_type: True
-    gnn_model_path: "_data/convmix/explaignn/gnn/gnn-answering.bin"
-    gnn_max_evidences: 20
-    gnn_max_entities: 80
-    gnn_max_output_evidences: 5
-    cache: True
+    gnn_max_output_evidences: 0
 
 example_turn: True

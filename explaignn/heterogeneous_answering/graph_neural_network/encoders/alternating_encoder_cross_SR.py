@@ -128,6 +128,8 @@ class AltEncoderCrossSR(Encoder):
             tokenized_input = tokenized_input.to(torch.device("cuda"))
 
         # LM encode
+        
+
         outputs = self.model(**tokenized_input)  # size: flattened_len x max_length x emb
         lm_encodings = outputs.last_hidden_state
 

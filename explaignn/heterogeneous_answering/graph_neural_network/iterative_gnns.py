@@ -6,6 +6,7 @@ import sys
 import time
 import torch
 import random
+from tqdm import tqdm
 
 from explaignn.heterogeneous_answering.graph_neural_network.graph_neural_network import GNNModule
 from explaignn.heterogeneous_answering.heterogeneous_answering import HeterogeneousAnswering
@@ -22,6 +23,7 @@ class IterativeGNNs(HeterogeneousAnswering):
 
         self.configs = []
         self.gnns = []
+        self.gnns_ans = []
         self.model_loaded = False
 
         self.logger.info(f"Config: {json.dumps(self.config, indent=4)}")
@@ -102,6 +104,19 @@ class IterativeGNNs(HeterogeneousAnswering):
         self.log_results(turns)
         self.logger.info(f"Finished inference.")
 
+    def inference_on_turns_one_iteration(self, turns, end):
+        turns_before = []
+        self.logger.info("Running inference_on_turns function!")
+        with tqdm(total=len(turns)) as p_bar:
+            for turn in turns:
+                if end == True or "generate_ans" in turn:
+                    turns_before.append(self.gnns_ans[0].inference_on_turn(turn))
+                    turn["finished"] = True
+                else:
+                    turns_before.append(self.gnns[0].inference_on_turn(turn))
+                p_bar.update(1)
+        return turns_before
+    
     def inference_on_turns(self, turns, sources=("kb", "text", "table", "info"), train=False):
         """Run inference on a set of turns."""
         self.load()
@@ -110,7 +125,10 @@ class IterativeGNNs(HeterogeneousAnswering):
         self.logger.info(f"Started to measure time.")
 
         turns_before_iteration = list()
-        for i in range(len(self.config["gnn_inference"])):
+        
+        for i, turn in enumerate(turns):
+            turn['original_index'] = i
+        for i in range(self.config["gnn_max_iteration"]):
             turns_before_iteration.append(copy.deepcopy(turns))
             
             # compute ans pres
@@ -121,21 +139,34 @@ class IterativeGNNs(HeterogeneousAnswering):
                 num_questions = len(answer_presence_list)
                 res_str = f"Inference - Ans. pres. ({num_questions}): {answer_presence}"
                 self.logger.info(res_str)
-
-            turns_before = self.gnns[i].inference_on_turns(turns)
-
-            if "cache" in self.config["gnn_inference"][i] and self.config["gnn_inference"][i]["cache"] == True:
-                if "top_evidences" in turns_before:
-                    del turns_before["top_evidences"]
-                store_json_with_mkdir(turns_before, get_out_path(self.config, i))
-            
-            entropy = calculate_entropies(turns_before, i)
-            if entropy > self.configs[i]["entropy_threshold"]:
-                self.gnns_ans[i].inference_on_turns(turns)
-                break
-            if i == len(self.config["gnn_inference"]) - 1:
-                self.gnns_ans[i+1].inference_on_turns(turns)
                 
+            if i == (self.config["gnn_max_iteration"] -1):
+                self.gnns_ans[0].inference_on_turns(turns)
+            else:
+                self.gnns[0].inference_on_turns(turns)
+            # if "entropy_threshold" in self.configs[i]:
+            #     for (idx, turn) in enumerate(turns_before):
+            #         entropy = calculate_entropies(turn, i, 37877)
+            #         if entropy <= self.configs[i]["entropy_threshold"]:
+            #             self.gnns_ans[i].inference_on_turn(turn)
+            #             turn["finished"] = entropy
+            #             turns[idx] = copy.deepcopy(turn)
+                    
+            
+            if i == (self.config["gnn_max_iteration"] -1):
+                turns = sorted(sorted_turns, key=lambda turn: turn['original_index'])
+                # for turn in turns:
+                #     if "top_evidences" in turn:
+                #         turn["num_top_evidences"] = len(turn["top_evidences"])
+                #         del turn["top_evidences"]
+                store_json_with_mkdir(turns, get_out_path(self.config, i))
+                
+                
+            # if i == len(self.config["gnn_inference"]) - 1:
+            #     self.gnns_ans[i+1].inference_on_turns(turns)
+            #     store_json_with_mkdir(turns_before, get_out_path(self.config, i + 1))
+            
+            
         # remember top evidences
         for turn_idx, turn in enumerate(turns):
             # identify supporting evidences
@@ -223,18 +254,19 @@ class IterativeGNNs(HeterogeneousAnswering):
                 GNNModule(self.configs[i], iteration=i + 1)
                 for i in range(len(self.config["gnn_inference"]))
             ]
-            self.configs_ans = [
-                self._prepare_config_for_iteration(config_at_i)
-                for config_at_i in self.config["gnn_answer"]
-            ]
-            self.gnns_ans = [
-                GNNModule(self.configs[i], iteration=i + 1)
-                for i in range(len(self.config["gnn_answer"]))
-            ]
             for gnn in self.gnns:
                 gnn.load()
-            for gnn in self.gnns_ans:
-                gnn.load()
+            if "gnn_answer" in self.config:
+                self.configs_ans = [
+                    self._prepare_config_for_iteration(config_at_i)
+                    for config_at_i in self.config["gnn_answer"]
+                ]
+                self.gnns_ans = [
+                    GNNModule(self.configs_ans[i], iteration=i + 1)
+                    for i in range(len(self.config["gnn_answer"]))
+                ]
+                for gnn in self.gnns_ans:
+                    gnn.load()
 
             # remember that model is loaded
             self.model_loaded = True
