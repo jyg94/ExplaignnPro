@@ -1,7 +1,6 @@
 name: "explaignn"
 log_level: "INFO"
 dev: False
-cache: True
 
 # Construct pipeline
 qu: sr
@@ -190,8 +189,16 @@ gnn_inference:
     gnn_max_evidences: 500
     gnn_max_entities: 1000
     gnn_max_output_evidences: 100
-    comment: "evians"
-    cache: True
 
+  - gnn_encoder: alternating_encoder_cross_SR
+    gnn_model_path: "_data/convmix/explaignn/gnn/gnn-pruning.bin"
+    gnn_max_evidences: 100
+    gnn_max_entities: 400
+    gnn_max_output_evidences: 20
 
-example_turn: True
+  - gnn_encoder: full_encoder_cross_SR
+    gnn_add_entity_type: True
+    gnn_model_path: "_data/convmix/explaignn/gnn/gnn-answering.bin"
+    gnn_max_evidences: 20
+    gnn_max_entities: 80
+    gnn_max_output_evidences: 5
